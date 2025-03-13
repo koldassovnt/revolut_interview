@@ -7,21 +7,39 @@ import kz.revolut.interview.url_shortener.service.impl.UrlShortenerServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.*;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class UrlShortenerServiceImplTest extends ParentTest {
 
-    private UrlShortenerServiceImpl urlShortenerServiceImpl;
+    private UrlShortenerServiceImpl urlShortenerService;
 
     @BeforeEach
     void init() {
         RandomStrGeneratorService randomStrGeneratorService = new RandomStrGeneratorServiceForTest();
 
-        urlShortenerServiceImpl = new UrlShortenerServiceImpl(
+        urlShortenerService = new UrlShortenerServiceImpl(
                 7,
                 5,
                 randomStrGeneratorService);
+    }
+
+    @Test
+    void shortUrl__nullOrBlank() {
+
+        //
+        //
+        assertThrows(IllegalArgumentException.class, () -> urlShortenerService.shortUrl(null));
+        assertThrows(IllegalArgumentException.class, () -> urlShortenerService.shortUrl(""));
+        assertThrows(IllegalArgumentException.class, () -> urlShortenerService.shortUrl("   "));
+        //
+        //
+
     }
 
     @Test
@@ -31,7 +49,7 @@ class UrlShortenerServiceImplTest extends ParentTest {
 
         //
         //
-        String shortUrl = urlShortenerServiceImpl.shortUrl(url);
+        String shortUrl = urlShortenerService.shortUrl(url);
         //
         //
 
@@ -43,11 +61,11 @@ class UrlShortenerServiceImplTest extends ParentTest {
     void shortUrl__sameUrl() {
 
         String url = "fLeI5WJOJd8n3vBPzWtSb6VV";
-        String shortUrl = urlShortenerServiceImpl.shortUrl(url);
+        String shortUrl = urlShortenerService.shortUrl(url);
 
         //
         //
-        String shortUrl2 = urlShortenerServiceImpl.shortUrl(url);
+        String shortUrl2 = urlShortenerService.shortUrl(url);
         //
         //
 
@@ -79,6 +97,34 @@ class UrlShortenerServiceImplTest extends ParentTest {
     }
 
     @Test
+    void shortUrl__multiThreading() throws ExecutionException, InterruptedException {
+
+        try (ExecutorService executorService = Executors.newFixedThreadPool(10)) {
+            Set<String> generatedShortUrls = Collections.synchronizedSet(new HashSet<>());
+            Set<Future<String>> futures = new HashSet<>();
+
+            for (int i = 0; i < 100; i++) {
+                String url = "https://example.com/page" + i;
+
+                //
+                //
+                futures.add(executorService.submit(() -> urlShortenerService.shortUrl(url)));
+                //
+                //
+
+            }
+
+            for (Future<String> future : futures) {
+                generatedShortUrls.add(future.get());
+            }
+
+            assertThat(generatedShortUrls).hasSize(100);
+
+        }
+
+    }
+
+    @Test
     void getOriginalUrl__noOriginal() {
 
         String shortUrl = "W8hV0Xes";
@@ -86,7 +132,7 @@ class UrlShortenerServiceImplTest extends ParentTest {
         //
         //
         assertThrows(RuntimeException.class,
-                () -> urlShortenerServiceImpl.getOriginalUrl(shortUrl));
+                () -> urlShortenerService.getOriginalUrl(shortUrl));
         //
         //
 
@@ -96,11 +142,11 @@ class UrlShortenerServiceImplTest extends ParentTest {
     void getOriginalUrl() {
 
         String original = "VISLlViW46cEQA7HuVru7HSh";
-        String shortUrl = urlShortenerServiceImpl.shortUrl(original);
+        String shortUrl = urlShortenerService.shortUrl(original);
 
         //
         //
-        String originalUrl = urlShortenerServiceImpl.getOriginalUrl(shortUrl);
+        String originalUrl = urlShortenerService.getOriginalUrl(shortUrl);
         //
         //
 

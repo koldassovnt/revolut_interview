@@ -25,6 +25,10 @@ public class UrlShortenerServiceImpl implements UrlShortenerService {
 
     @Override
     public String shortUrl(String url) {
+        if (url == null || url.isBlank()) {
+            throw new IllegalArgumentException("Provided url is null");
+        }
+
         return urlToShortMap.computeIfAbsent(url, key -> {
             String shortUrl = generateUniqueShortUrl();
             shortToUrlMap.put(shortUrl, url);
