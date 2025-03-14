@@ -11,6 +11,10 @@ public class RandomStrGeneratorServiceImpl implements RandomStrGeneratorService 
     @Override
     public String generate(int length) {
 
+        if (length <= 0) {
+            throw new IllegalArgumentException("Provided length is negative or zero");
+        }
+
         char[] codes = new char[length];
         ThreadLocalRandom random = ThreadLocalRandom.current();
 

@@ -2,69 +2,73 @@ package kz.revolut.interview.url_shortener.service.impl;
 
 import kz.revolut.interview.url_shortener.service.RandomStrGeneratorService;
 import kz.revolut.interview.url_shortener.service.UrlShortenerService;
+import kz.revolut.interview.url_shortener.service.exceptions.InvalidMaxCapacityException;
+import kz.revolut.interview.url_shortener.service.exceptions.InvalidShortUrlLengthException;
+import kz.revolut.interview.url_shortener.service.exceptions.MaxCapacityReachedException;
+import kz.revolut.interview.url_shortener.service.exceptions.MaxRetryAttemptsReachedException;
+import kz.revolut.interview.url_shortener.service.model.UrlModel;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class UrlShortenerServiceImpl implements UrlShortenerService {
 
+    private static final String PLACEHOLDER = "PLACEHOLDER";
+    private static final int MAX_RETRY_ATTEMPTS = 10;
+
     private final Map<String, String> urlToShortMap = new ConcurrentHashMap<>();
     private final Map<String, String> shortToUrlMap = new ConcurrentHashMap<>();
 
     private final RandomStrGeneratorService randomStrGeneratorService;
-    private final int generateShortUrlRetryLimit;
     private final int shortUrlLength;
+    private final int maxCapacity;
 
     public UrlShortenerServiceImpl(int shortUrlLength,
-                                   int generateShortUrlRetryLimit,
+                                   int maxCapacity,
                                    RandomStrGeneratorService randomStrGeneratorService) {
+        if (shortUrlLength <= 0) {
+            throw new InvalidShortUrlLengthException("Invalid short URL length");
+        }
+
+        if (maxCapacity <= 0) {
+            throw new InvalidMaxCapacityException("Invalid max capacity");
+        }
+
         this.shortUrlLength = shortUrlLength;
-        this.generateShortUrlRetryLimit = generateShortUrlRetryLimit;
+        this.maxCapacity = maxCapacity;
         this.randomStrGeneratorService = randomStrGeneratorService;
     }
 
     @Override
-    public String shortUrl(String url) {
+    public UrlModel shortUrl(String url) {
         if (url == null || url.isBlank()) {
             throw new IllegalArgumentException("Provided url is null");
         }
 
-        return urlToShortMap.computeIfAbsent(url, key -> {
-            String shortUrl = generateUniqueShortUrl();
-            shortToUrlMap.put(shortUrl, url);
-            return shortUrl;
-        });
-    }
-
-    @Override
-    public String getOriginalUrl(String shortUrl) {
-        String original = shortToUrlMap.get(shortUrl);
-
-        if (original == null) {
-            throw new RuntimeException("Short url does not have original url");
+        if (urlToShortMap.size() >= maxCapacity) {
+            throw new MaxCapacityReachedException("Reached capacity limit");
         }
 
-        return original;
+        String shortUrl = urlToShortMap.computeIfAbsent(url, key -> {
+            String newShortUrl = generateUniqueShortUrl();
+            shortToUrlMap.put(newShortUrl, url); // Store the actual URL
+            return newShortUrl;
+        });
+
+        return new UrlModel(url, shortUrl);
     }
 
-    private String generateUniqueShortUrl() {
+    public String generateUniqueShortUrl() {
+        for (int attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
+            String shortUrl = randomStrGeneratorService.generate(shortUrlLength);
 
-        String shortUrl;
-        int generateCount = 0;
-
-        do {
-
-            if (generateCount == generateShortUrlRetryLimit) {
-                throw new RuntimeException("Reached generate short url retry limit");
+            if (shortToUrlMap.putIfAbsent(shortUrl, PLACEHOLDER) == null) {
+                return shortUrl;
             }
+        }
 
-            shortUrl = randomStrGeneratorService.generate(shortUrlLength);
-            generateCount++;
-
-        } while (shortToUrlMap.containsKey(shortUrl));
-
-        return shortUrl;
-
+        throw new MaxRetryAttemptsReachedException("Failed to generate a unique short URL after " +
+                MAX_RETRY_ATTEMPTS + " attempts");
     }
 
 }

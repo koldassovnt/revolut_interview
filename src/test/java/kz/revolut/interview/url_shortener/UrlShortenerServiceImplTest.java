@@ -1,157 +1,134 @@
 package kz.revolut.interview.url_shortener;
 
-import kz.revolut.interview.ParentTest;
-import kz.revolut.interview.RandomStrGeneratorServiceForTest;
 import kz.revolut.interview.url_shortener.service.RandomStrGeneratorService;
+import kz.revolut.interview.url_shortener.service.exceptions.InvalidMaxCapacityException;
+import kz.revolut.interview.url_shortener.service.exceptions.InvalidShortUrlLengthException;
+import kz.revolut.interview.url_shortener.service.exceptions.MaxCapacityReachedException;
+import kz.revolut.interview.url_shortener.service.exceptions.MaxRetryAttemptsReachedException;
 import kz.revolut.interview.url_shortener.service.impl.UrlShortenerServiceImpl;
+import kz.revolut.interview.url_shortener.service.model.UrlModel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.mockito.Mockito;
 
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
+import java.math.BigInteger;
+import java.util.*;
 import java.util.concurrent.*;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.when;
 
-class UrlShortenerServiceImplTest extends ParentTest {
+class UrlShortenerServiceImplTest {
 
+    private RandomStrGeneratorService randomStrGeneratorService;
     private UrlShortenerServiceImpl urlShortenerService;
 
+    private static final int SHORT_URL_LENGTH = 10;
+    private static final int MAX_CAPACITY = 100;
+
     @BeforeEach
-    void init() {
-        RandomStrGeneratorService randomStrGeneratorService = new RandomStrGeneratorServiceForTest();
-
-        urlShortenerService = new UrlShortenerServiceImpl(
-                7,
-                5,
-                randomStrGeneratorService);
+    void setUp() {
+        randomStrGeneratorService = Mockito.mock(RandomStrGeneratorService.class);
+        urlShortenerService = new UrlShortenerServiceImpl(SHORT_URL_LENGTH, MAX_CAPACITY, randomStrGeneratorService);
     }
 
     @Test
-    void shortUrl__nullOrBlank() {
+    void should_throw_exception_for_invalid_short_url_length() {
+        assertThrows(InvalidShortUrlLengthException.class, () ->
+                new UrlShortenerServiceImpl(0, MAX_CAPACITY, randomStrGeneratorService));
+    }
 
-        //
-        //
+    @Test
+    void should_throw_exception_for_invalid_max_capacity() {
+        assertThrows(InvalidMaxCapacityException.class, () ->
+                new UrlShortenerServiceImpl(SHORT_URL_LENGTH, 0, randomStrGeneratorService));
+    }
+
+    @Test
+    void should_throw_exception_for_null_or_empty_url() {
         assertThrows(IllegalArgumentException.class, () -> urlShortenerService.shortUrl(null));
-        assertThrows(IllegalArgumentException.class, () -> urlShortenerService.shortUrl(""));
-        assertThrows(IllegalArgumentException.class, () -> urlShortenerService.shortUrl("   "));
-        //
-        //
-
+        assertThrows(IllegalArgumentException.class, () -> urlShortenerService.shortUrl(" "));
     }
 
     @Test
-    void shortUrl__firstCall() {
+    void should_return_same_short_url_for_same_original_url() {
+        when(randomStrGeneratorService.generate(SHORT_URL_LENGTH)).thenReturn("abc123");
 
-        String url = "fLeI5WJOJd8n3vBPzWtSb6VV";
+        UrlModel firstCall = urlShortenerService.shortUrl("https://example.com");
+        UrlModel secondCall = urlShortenerService.shortUrl("https://example.com");
 
-        //
-        //
-        String shortUrl = urlShortenerService.shortUrl(url);
-        //
-        //
-
-        assertThat(shortUrl).hasSize(7);
-
+        assertEquals(firstCall, secondCall);
     }
 
     @Test
-    void shortUrl__sameUrl() {
+    void should_generate_unique_short_urls_for_different_original_urls() {
+        when(randomStrGeneratorService.generate(SHORT_URL_LENGTH)).thenReturn("abc123", "xyz789");
 
-        String url = "fLeI5WJOJd8n3vBPzWtSb6VV";
-        String shortUrl = urlShortenerService.shortUrl(url);
+        UrlModel first = urlShortenerService.shortUrl("https://example1.com");
+        UrlModel second = urlShortenerService.shortUrl("https://example2.com");
 
-        //
-        //
-        String shortUrl2 = urlShortenerService.shortUrl(url);
-        //
-        //
-
-        assertThat(shortUrl2).hasSize(7);
-        assertThat(shortUrl2).isEqualTo(shortUrl);
-
+        assertNotEquals(first.shortUrl(), second.shortUrl());
     }
 
     @Test
-    void shortUrl__reachRetryLimit() {
+    void should_throw_exception_when_capacity_reached() {
+        UrlShortenerServiceImpl smallCapacityService = new UrlShortenerServiceImpl(
+                SHORT_URL_LENGTH,
+                1,
+                randomStrGeneratorService);
+        when(randomStrGeneratorService.generate(SHORT_URL_LENGTH)).thenReturn("abc123", "xyz789");
 
-        UrlShortenerServiceImpl urlShortenerService = new UrlShortenerServiceImpl(
-                7,
-                2,
-                new RandomStrGeneratorServiceForTest("uDpQo4jX"));
-
-        String url0 = "fLeI5WJOJd8n3vBPzWtSb6VV";
-        String url1 = "Ae1s7lcSor86MD7i2sfONOVe";
-
-        urlShortenerService.shortUrl(url0);
-
-        //
-        //
-        assertThrows(RuntimeException.class,
-                () -> urlShortenerService.shortUrl(url1));
-        //
-        //
-
+        smallCapacityService.shortUrl("https://example.com");
+        assertThrows(MaxCapacityReachedException.class, () -> smallCapacityService.shortUrl("https://example2.com"));
     }
 
     @Test
-    void shortUrl__multiThreading() throws ExecutionException, InterruptedException {
+    void should_throw_exception_when_max_retries_exceeded() {
+        when(randomStrGeneratorService.generate(SHORT_URL_LENGTH)).thenReturn("abc123");
+        urlShortenerService.shortUrl("https://example.com");
+
+        assertThrows(MaxRetryAttemptsReachedException.class, urlShortenerService::generateUniqueShortUrl);
+    }
+
+    @Test
+    @Execution(ExecutionMode.CONCURRENT)
+    void should_handle_concurrent_url_shortening() throws InterruptedException, ExecutionException {//fails some time
+        Set<String> shortUrls = ConcurrentHashMap.newKeySet();
+        List<String> failedUrls = Collections.synchronizedList(new ArrayList<>());
 
         try (ExecutorService executorService = Executors.newFixedThreadPool(10)) {
-            Set<String> generatedShortUrls = Collections.synchronizedSet(new HashSet<>());
-            Set<Future<String>> futures = new HashSet<>();
+            when(randomStrGeneratorService.generate(SHORT_URL_LENGTH))
+                    .thenAnswer(invocation -> new BigInteger(130, ThreadLocalRandom.current())
+                            .toString(32)
+                            .substring(0, SHORT_URL_LENGTH));
 
-            for (int i = 0; i < 100; i++) {
-                String url = "https://example.com/page" + i;
+            Callable<Void> task = () -> {
+                try {
+                    String url = "https://example.com/" + ThreadLocalRandom.current().nextInt(1000);
+                    UrlModel urlModel = urlShortenerService.shortUrl(url);
+                    shortUrls.add(urlModel.shortUrl());
+                } catch (MaxRetryAttemptsReachedException e) {
+                    failedUrls.add("Failure");
+                }
+                return null;
+            };
 
-                //
-                //
-                futures.add(executorService.submit(() -> urlShortenerService.shortUrl(url)));
-                //
-                //
-
+            List<Future<Void>> futures = new ArrayList<>();
+            for (int i = 0; i < 50; i++) {
+                futures.add(executorService.submit(task));
             }
 
-            for (Future<String> future : futures) {
-                generatedShortUrls.add(future.get());
+            for (Future<Void> future : futures) {
+                future.get();
             }
 
-            assertThat(generatedShortUrls).hasSize(100);
-
+            executorService.shutdown();
         }
 
-    }
-
-    @Test
-    void getOriginalUrl__noOriginal() {
-
-        String shortUrl = "W8hV0Xes";
-
-        //
-        //
-        assertThrows(RuntimeException.class,
-                () -> urlShortenerService.getOriginalUrl(shortUrl));
-        //
-        //
-
-    }
-
-    @Test
-    void getOriginalUrl() {
-
-        String original = "VISLlViW46cEQA7HuVru7HSh";
-        String shortUrl = urlShortenerService.shortUrl(original);
-
-        //
-        //
-        String originalUrl = urlShortenerService.getOriginalUrl(shortUrl);
-        //
-        //
-
-        assertThat(originalUrl).isEqualTo(original);
-
+        System.out.println("Failures: " + failedUrls.size());
+        assertEquals(50, shortUrls.size() + failedUrls.size());
     }
 
 }

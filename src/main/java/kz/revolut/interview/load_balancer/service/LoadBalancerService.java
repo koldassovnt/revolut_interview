@@ -1,7 +1,7 @@
 package kz.revolut.interview.load_balancer.service;
 
-import kz.revolut.interview.load_balancer.model.LoadBalancingStrategy;
 import kz.revolut.interview.load_balancer.model.ServerInstance;
+import kz.revolut.interview.load_balancer.strategy.LoadServerStrategy;
 
 import java.util.List;
 
@@ -15,6 +15,6 @@ public interface LoadBalancerService {
 
     List<ServerInstance> loadAllServers();
 
-    void setStrategy(LoadBalancingStrategy newStrategy);
+    void setStrategy(LoadServerStrategy newStrategy);
 
 }

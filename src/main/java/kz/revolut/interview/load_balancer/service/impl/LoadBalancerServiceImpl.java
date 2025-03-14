@@ -1,74 +1,86 @@
 package kz.revolut.interview.load_balancer.service.impl;
 
-import kz.revolut.interview.load_balancer.model.LoadBalancingStrategy;
+import kz.revolut.interview.load_balancer.exceptions.InvalidMaxCapacityException;
+import kz.revolut.interview.load_balancer.exceptions.MaxCapacityReachedException;
 import kz.revolut.interview.load_balancer.model.ServerInstance;
 import kz.revolut.interview.load_balancer.service.LoadBalancerService;
-import kz.revolut.interview.load_balancer.strategy.selector.LoadServiceSelector;
+import kz.revolut.interview.load_balancer.strategy.LoadServerStrategy;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class LoadBalancerServiceImpl implements LoadBalancerService {
 
     private final List<ServerInstance> servers = new CopyOnWriteArrayList<>();
-    private final Lock lock = new ReentrantLock();
-    private final int maxServers;
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    private final int maxCapacity;
 
-    private LoadBalancingStrategy strategy;
+    private LoadServerStrategy strategy;
 
-    public LoadBalancerServiceImpl(LoadBalancingStrategy strategy,
-                                   int maxServers) {
-        this.strategy = strategy;
-        this.maxServers = maxServers;
+    public LoadBalancerServiceImpl(LoadServerStrategy strategy,
+                                   int maxCapacity) {
+        this.strategy = Objects.requireNonNull(strategy, "Strategy cannot be null");
+        if (maxCapacity <= 0) {
+            throw new InvalidMaxCapacityException("maxCapacity must be greater than 0");
+        }
+        this.maxCapacity = maxCapacity;
     }
 
     @Override
     public void addServer(ServerInstance serverInstance) {
-        lock.lock();
+        lock.writeLock().lock();
         try {
-            if (servers.size() == maxServers) {
-                throw new IllegalArgumentException("Servers size is full");
+            if (servers.size() >= maxCapacity) {
+                throw new MaxCapacityReachedException("Servers size is full");
             }
-
             if (!servers.contains(serverInstance)) {
                 servers.add(serverInstance);
             }
         } finally {
-            lock.unlock();
+            lock.writeLock().unlock();
         }
     }
 
     @Override
     public void removeServer(String serverId) {
-        lock.lock();
+        lock.writeLock().lock();
         try {
             servers.removeIf(server -> Objects.equals(server.id(), serverId));
         } finally {
-            lock.unlock();
+            lock.writeLock().unlock();
         }
     }
 
     @Override
     public ServerInstance loadServer() {
-        return LoadServiceSelector.loadStrategy(strategy).loadInstance(servers);
+        lock.readLock().lock();
+        try {
+            return strategy.loadInstance(servers);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public List<ServerInstance> loadAllServers() {
-        return new ArrayList<>(servers);
+        lock.readLock().lock();
+        try {
+            return List.copyOf(servers);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
-    public void setStrategy(LoadBalancingStrategy newStrategy) {
-        lock.lock();
+    public void setStrategy(LoadServerStrategy newStrategy) {
+        lock.writeLock().lock();
         try {
-            this.strategy = newStrategy;
+            this.strategy = Objects.requireNonNull(newStrategy, "New strategy cannot be null");
         } finally {
-            lock.unlock();
+            lock.writeLock().unlock();
         }
     }
 

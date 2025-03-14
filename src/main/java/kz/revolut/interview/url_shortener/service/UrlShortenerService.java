@@ -1,9 +1,11 @@
 package kz.revolut.interview.url_shortener.service;
 
+import kz.revolut.interview.url_shortener.service.model.UrlModel;
+
 public interface UrlShortenerService {
 
-    String shortUrl(String url);
+    UrlModel shortUrl(String url);
 
-    String getOriginalUrl(String shortUrl);
+    String generateUniqueShortUrl();
 
 }

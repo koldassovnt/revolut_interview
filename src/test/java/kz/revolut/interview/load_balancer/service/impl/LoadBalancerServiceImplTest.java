@@ -1,204 +1,138 @@
 package kz.revolut.interview.load_balancer.service.impl;
 
-import kz.revolut.interview.ParentTest;
-import kz.revolut.interview.load_balancer.model.LoadBalancingStrategy;
+import kz.revolut.interview.load_balancer.exceptions.InvalidMaxCapacityException;
+import kz.revolut.interview.load_balancer.exceptions.MaxCapacityReachedException;
 import kz.revolut.interview.load_balancer.model.ServerInstance;
+import kz.revolut.interview.load_balancer.strategy.LoadServerStrategy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-class LoadBalancerServiceImplTest extends ParentTest {
+class LoadBalancerServiceImplTest {
 
-    private LoadBalancerServiceImpl loadBalancerService;
+    private LoadBalancerServiceImpl loadBalancer;
+    private LoadServerStrategy mockStrategy;
+    private ServerInstance server1;
+    private ServerInstance server2;
 
     @BeforeEach
-    void setup() {
-        loadBalancerService = new LoadBalancerServiceImpl(LoadBalancingStrategy.ROUND_ROBIN, 3);
+    void setUp() {
+        mockStrategy = mock(LoadServerStrategy.class);
+        loadBalancer = new LoadBalancerServiceImpl(mockStrategy, 2);
+
+        server1 = new ServerInstance("1", "192.168.1.1");
+        server2 = new ServerInstance("2", "192.168.1.2");
     }
 
     @Test
-    void addServer__firstServer() {
-
-        ServerInstance serverInstance = new ServerInstance(rnd(String.class), rnd(String.class));
-
-        //
-        //
-        loadBalancerService.addServer(serverInstance);
-        //
-        //
-
-        List<ServerInstance> serverInstances = loadBalancerService.loadAllServers();
-
-        assertThat(serverInstances).isNotEmpty();
-        assertThat(serverInstances).hasSize(1);
-
-        assertThat(serverInstances.getFirst().id()).isEqualTo(serverInstance.id());
-        assertThat(serverInstances.getFirst().url()).isEqualTo(serverInstance.url());
-
+    void should_throw_exception_when_max_capacity_zero() {
+        assertThrows(InvalidMaxCapacityException.class, () -> new LoadBalancerServiceImpl(mockStrategy, 0));
     }
 
     @Test
-    void addServer__existingServer() {
-
-        String id = rnd(String.class);
-        String url = rnd(String.class);
-
-        ServerInstance serverInstance0 = new ServerInstance(id, url);
-        ServerInstance serverInstance1 = new ServerInstance(id, url);
-
-        //
-        //
-        loadBalancerService.addServer(serverInstance0);
-        loadBalancerService.addServer(serverInstance1);
-        //
-        //
-
-        List<ServerInstance> serverInstances = loadBalancerService.loadAllServers();
-
-        assertThat(serverInstances).isNotEmpty();
-        assertThat(serverInstances).hasSize(1);
-
-        assertThat(serverInstances.getFirst().id()).isEqualTo(serverInstance0.id());
-        assertThat(serverInstances.getFirst().url()).isEqualTo(serverInstance0.url());
-
+    void should_throw_exception_when_max_capacity_negative() {
+        assertThrows(InvalidMaxCapacityException.class, () -> new LoadBalancerServiceImpl(mockStrategy, -1));
     }
 
     @Test
-    void addServer__serverListFull() {
+    void should_add_server_when_capacity_not_reached() {
+        loadBalancer.addServer(server1);
+        loadBalancer.addServer(server2);
 
-        ServerInstance serverInstance0 = new ServerInstance(rnd(String.class), rnd(String.class));
-        ServerInstance serverInstance1 = new ServerInstance(rnd(String.class), rnd(String.class));
-        ServerInstance serverInstance2 = new ServerInstance(rnd(String.class), rnd(String.class));
-
-        ServerInstance serverInstance3 = new ServerInstance(rnd(String.class), rnd(String.class));
-
-        loadBalancerService.addServer(serverInstance0);
-        loadBalancerService.addServer(serverInstance1);
-        loadBalancerService.addServer(serverInstance2);
-
-        //
-        //
-        assertThrows(IllegalArgumentException.class,
-                () -> loadBalancerService.addServer(serverInstance3));
-        //
-        //
-
-        List<ServerInstance> serverInstances = loadBalancerService.loadAllServers();
-
-        assertThat(serverInstances).isNotEmpty();
-        assertThat(serverInstances).hasSize(3);
-
-        assertThat(serverInstances.get(0).id()).isEqualTo(serverInstance0.id());
-        assertThat(serverInstances.get(0).url()).isEqualTo(serverInstance0.url());
-
-        assertThat(serverInstances.get(1).id()).isEqualTo(serverInstance1.id());
-        assertThat(serverInstances.get(1).url()).isEqualTo(serverInstance1.url());
-
-        assertThat(serverInstances.get(2).id()).isEqualTo(serverInstance2.id());
-        assertThat(serverInstances.get(2).url()).isEqualTo(serverInstance2.url());
-
+        List<ServerInstance> servers = loadBalancer.loadAllServers();
+        assertEquals(2, servers.size());
+        assertTrue(servers.contains(server1));
+        assertTrue(servers.contains(server2));
     }
 
     @Test
-    void removeServer__oneInstance() {
+    void should_throw_exception_when_max_capacity_is_reached() {
+        loadBalancer.addServer(server1);
+        loadBalancer.addServer(server2);
 
-        ServerInstance serverInstance = new ServerInstance(rnd(String.class), rnd(String.class));
-
-        loadBalancerService.addServer(serverInstance);
-
-        //
-        //
-        loadBalancerService.removeServer(serverInstance.id());
-        //
-        //
-
-        List<ServerInstance> serverInstances = loadBalancerService.loadAllServers();
-
-        assertThat(serverInstances).isEmpty();
-
+        ServerInstance server3 = new ServerInstance("3", "192.168.1.3");
+        assertThrows(MaxCapacityReachedException.class, () -> loadBalancer.addServer(server3));
     }
 
     @Test
-    void removeServer__notFoundInstance() {
+    void should_remove_server_by_id() {
+        loadBalancer.addServer(server1);
+        loadBalancer.addServer(server2);
 
-        ServerInstance serverInstance = new ServerInstance(rnd(String.class), rnd(String.class));
+        loadBalancer.removeServer(server1.id());
 
-        loadBalancerService.addServer(serverInstance);
-
-        //
-        //
-        loadBalancerService.removeServer(serverInstance.id() + rnd(String.class));
-        //
-        //
-
-        List<ServerInstance> serverInstances = loadBalancerService.loadAllServers();
-
-        assertThat(serverInstances).isNotEmpty();
-        assertThat(serverInstances).hasSize(1);
-
-        assertThat(serverInstances.getFirst().id()).isEqualTo(serverInstance.id());
-        assertThat(serverInstances.getFirst().url()).isEqualTo(serverInstance.url());
-
+        List<ServerInstance> servers = loadBalancer.loadAllServers();
+        assertEquals(1, servers.size());
+        assertFalse(servers.contains(server1));
     }
 
     @Test
-    void loadServer__roundRobin() {
+    void should_not_fail_when_removing_non_existent_server() {
+        loadBalancer.addServer(server1);
 
-        ServerInstance serverInstance0 = new ServerInstance(rnd(String.class), rnd(String.class));
-        ServerInstance serverInstance1 = new ServerInstance(rnd(String.class), rnd(String.class));
-        ServerInstance serverInstance2 = new ServerInstance(rnd(String.class), rnd(String.class));
+        loadBalancer.removeServer("non-existent-id");
 
-        loadBalancerService.addServer(serverInstance0);
-        loadBalancerService.addServer(serverInstance1);
-        loadBalancerService.addServer(serverInstance2);
-
-        //
-        //
-        ServerInstance first = loadBalancerService.loadServer();
-        ServerInstance second = loadBalancerService.loadServer();
-        loadBalancerService.loadServer();
-        ServerInstance fourth = loadBalancerService.loadServer();
-        ServerInstance fifth = loadBalancerService.loadServer();
-        //
-        //
-
-        assertThat(first.id()).isEqualTo(fourth.id());
-        assertThat(first.url()).isEqualTo(fourth.url());
-
-        assertThat(second.id()).isEqualTo(fifth.id());
-        assertThat(second.url()).isEqualTo(fifth.url());
-
+        List<ServerInstance> servers = loadBalancer.loadAllServers();
+        assertEquals(1, servers.size());
     }
 
     @Test
-    void loadServer__random() {
+    void should_return_selected_server_when_load_strategy_is_used() {
+        loadBalancer.addServer(server1);
+        loadBalancer.addServer(server2);
 
-        loadBalancerService.setStrategy(LoadBalancingStrategy.RANDOM);
+        when(mockStrategy.loadInstance(anyList())).thenReturn(server1);
 
-        ServerInstance serverInstance0 = new ServerInstance(rnd(String.class), rnd(String.class));
-        ServerInstance serverInstance1 = new ServerInstance(rnd(String.class), rnd(String.class));
-        ServerInstance serverInstance2 = new ServerInstance(rnd(String.class), rnd(String.class));
+        ServerInstance selected = loadBalancer.loadServer();
+        assertNotNull(selected);
+        assertEquals(server1, selected);
+    }
 
-        loadBalancerService.addServer(serverInstance0);
-        loadBalancerService.addServer(serverInstance1);
-        loadBalancerService.addServer(serverInstance2);
+    @Test
+    void should_change_strategy_successfully() {
+        LoadServerStrategy newStrategy = mock(LoadServerStrategy.class);
+        loadBalancer.setStrategy(newStrategy);
 
-        Set<ServerInstance> differentInstances = new HashSet<>();
+        when(newStrategy.loadInstance(anyList())).thenReturn(server2);
 
-        for (int i = 0; i < 10; i++) {
-            differentInstances.add(loadBalancerService.loadServer());
+        ServerInstance selected = loadBalancer.loadServer();
+        assertNotNull(selected);
+        assertEquals(server2, selected);
+    }
+
+    @Test
+    @Execution(ExecutionMode.CONCURRENT)
+    void should_handle_concurrent_add_remove_operations() throws InterruptedException {
+        int threadCount = 10;
+        CountDownLatch latch = new CountDownLatch(threadCount);
+        try (ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(threadCount)) {
+
+            for (int i = 0; i < threadCount; i++) {
+                int finalI = i;
+                executor.execute(() -> {
+                    try {
+                        ServerInstance server = new ServerInstance(String.valueOf(finalI), "192.168.1." + finalI);
+                        loadBalancer.addServer(server);
+                        loadBalancer.removeServer(server.id());
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+
+            latch.await();
+            assertEquals(0, loadBalancer.loadAllServers().size());
+
+            executor.shutdown();
         }
-
-        assertThat(differentInstances).hasSizeGreaterThan(1);
-
     }
-
-
-
 }

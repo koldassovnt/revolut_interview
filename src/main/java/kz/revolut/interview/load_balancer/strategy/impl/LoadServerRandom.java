@@ -15,7 +15,6 @@ public class LoadServerRandom implements LoadServerStrategy {
         if (servers.isEmpty()) {
             throw new IllegalStateException("No servers available");
         }
-
         return servers.get(random.nextInt(servers.size()));
     }
 
