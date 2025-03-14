@@ -1,24 +1,19 @@
 ### IntelliJ IDEA ###
 .gradle
-build/
+/build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
+/.gradle/
 
-.idea
-!/.idea
-/.idea/*
+.idea/
 !/.idea/codeStyles
 !/.idea/inspectionProfiles
 !/.idea/runConfigurations
-*/**/.idea
-.shelf
-*/**/*.iml
-*/**/*.ipr
-*/**/*.iws
-/*.iml
-/*.ipr
-/*.iws
+
+*.iml
+*.ipr
+*.iws
 /buildSrc/.idea
 /buildSrc/.shelf
 /buildSrc/*.iml
@@ -39,7 +34,7 @@ build/
 .settings
 .springBeans
 .sts4-cache
-bin/
+/bin/
 !**/src/main/**/bin/
 !**/src/test/**/bin/
 
@@ -53,5 +48,7 @@ bin/
 ### VS Code ###
 .vscode/
 
-### Mac OS ###
+### MacOS ###
 .DS_Store
+.AppleDouble
+.LSOverride
