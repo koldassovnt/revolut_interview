@@ -13,7 +13,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class UrlShortenerServiceImpl implements UrlShortenerService {
 
-    private static final String PLACEHOLDER = "PLACEHOLDER";
     private static final int MAX_RETRY_ATTEMPTS = 10;
 
     private final Map<String, String> urlToShortMap = new ConcurrentHashMap<>();
@@ -45,25 +44,25 @@ public class UrlShortenerServiceImpl implements UrlShortenerService {
             throw new IllegalArgumentException("Provided url is null");
         }
 
-        if (urlToShortMap.size() >= maxCapacity) {
-            throw new MaxCapacityReachedException("Reached capacity limit");
+        if (urlToShortMap.containsKey(url)) {
+            return new UrlModel(url, urlToShortMap.get(url));
         }
 
-        String shortUrl = urlToShortMap.computeIfAbsent(url, key -> {
-            String newShortUrl = generateUniqueShortUrl();
-            shortToUrlMap.put(newShortUrl, url); // Store the actual URL
-            return newShortUrl;
-        });
+        synchronized (this) {
+            if (urlToShortMap.size() >= maxCapacity) {
+                throw new MaxCapacityReachedException("Reached capacity limit");
+            }
 
-        return new UrlModel(url, shortUrl);
-    }
+            int attemptCounter = 0;
 
-    public String generateUniqueShortUrl() {
-        for (int attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
-            String shortUrl = randomStrGeneratorService.generate(shortUrlLength);
+            while (attemptCounter < MAX_RETRY_ATTEMPTS) {
+                String shortUrl = randomStrGeneratorService.generate(shortUrlLength);
+                attemptCounter++;
 
-            if (shortToUrlMap.putIfAbsent(shortUrl, PLACEHOLDER) == null) {
-                return shortUrl;
+                if (shortToUrlMap.putIfAbsent(shortUrl, url) == null) {
+                    urlToShortMap.put(url, shortUrl);
+                    return new UrlModel(url, shortUrl);
+                }
             }
         }
 

@@ -6,6 +6,4 @@ public interface UrlShortenerService {
 
     UrlModel shortUrl(String url);
 
-    String generateUniqueShortUrl();
-
 }

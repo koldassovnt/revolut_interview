@@ -83,7 +83,6 @@ class LoadServerRoundRobinTest {
 
             CountDownLatch latch = new CountDownLatch(threadCount);
 
-
             for (int i = 0; i < threadCount; i++) {
                 executor.submit(() -> {
                     try {
